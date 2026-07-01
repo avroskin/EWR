@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arfleet RiskWatch</title>
+  <link rel="icon" type="image/png" href="images/arkas-logo.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <img src="images/arkas-logo.png" alt="Arkas Logo" class="arkas-logo">
+      <div class="header-title">
+        <h1>Arfleet RiskWatch</h1>
+        <span>HRA // EWR // K&R Voyage Zone Tracking</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="btn btn-success" id="btn-add-voyage" onclick="openAddForm()">+ Add New Voyage</button>
+      <button class="btn btn-export" onclick="doExport()">⬇ Excel Export</button>
+      <button class="btn btn-outline" onclick="openAdmin()">⚙ Settings</button>
+    </div>
+  </header>
+
+  <!-- Filters -->
+  <div class="filter-bar" id="filter-bar">
+    <div class="filter-toolbar">
+      <div class="filter-group">
+        <label>Year</label>
+        <select id="f-year" onchange="onYearChange()">
+          <option value="">Loading...</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Vessels</label>
+        <select id="f-vessel" multiple size="4" onchange="scheduleFilter()">
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Charterer</label>
+        <select id="f-charterer" onchange="scheduleFilter()">
+          <option value="">All</option>
+        </select>
+      </div>
+      
+      <input type="hidden" id="f-zone" value="">
+      
+      <div class="filter-group">
+        <label>Port</label>
+        <input type="text" id="f-port" placeholder="Port name..." oninput="scheduleFilter()">
+      </div>
+      <div class="filter-group">
+        <label>Status</label>
+        <select id="f-confirmed" onchange="scheduleFilter()">
+          <option value="">All</option>
+          <option value="confirmed">Confirmed</option>
+          <option value="estimated">Estimated</option>
+        </select>
+      </div>
+      
+      <div class="filter-separator"></div>
+      
+      <div class="filter-group">
+        <label>Date Range</label>
+        <select id="f-date-preset" onchange="applyDatePreset()">
+          <option value="">Custom</option>
+          <option value="30">Last 30 Days</option>
+          <option value="90">Last 3 Months</option>
+          <option value="180">Last 6 Months</option>
+          <option value="365">Last 1 Year</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>From</label>
+        <input type="text" id="f-date-from" placeholder="dd/mm/yyyy" inputmode="numeric" onchange="normalizeDateDisplayInput(this); scheduleFilter()">
+      </div>
+      <div class="filter-group">
+        <label>To</label>
+        <input type="text" id="f-date-to" placeholder="dd/mm/yyyy" inputmode="numeric" onchange="normalizeDateDisplayInput(this); scheduleFilter()">
+      </div>
+      
+      <div class="filter-separator"></div>
+      
+      <div class="filter-group">
+        <label>Legacy Services</label>
+        <select id="f-legacy" onchange="onLegacyServiceChange()">
+          <option value="">Legacy Disabled...</option>
+        </select>
+      </div>
+      
+      <div class="filter-actions">
+        <button class="btn btn-outline btn-sm" onclick="clearFilters()" style="margin-top:20px;">Clear Filters</button>
+      </div>
+      
+      <div class="filter-spacer"></div>
+      
+      <div class="record-count-badge dashboard-status-badge">
+        <span id="result-count">0 records</span>
+        <span id="dashboard-last-updated">Updated -</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Archive warning -->
+  <div id="archive-notice" class="archive-notice" style="display:none">
+    <span>📁 This year is archived. Records are read-only.</span>
+  </div>
+
+  <div id="legacy-context" class="legacy-context" style="display:none">
+    <div class="legacy-context-main">
+      <span class="legacy-kicker">Legacy service</span>
+      <strong id="legacy-context-title">-</strong>
+      <span id="legacy-context-count" class="legacy-count-pill">0 records</span>
+    </div>
+    <div id="legacy-service-tabs" class="legacy-service-tabs"></div>
+  </div>
+
+  <div class="zone-tabs-container">
+    <div class="zone-tabs-scroll">
+      <button class="zone-tab zone-tab-all active" data-zone="" onclick="setZoneTab(this, '')">All Zones</button>
+      <button class="zone-tab zone-tab-gulf_of_aden" data-zone="gulf_of_aden" onclick="setZoneTab(this, 'gulf_of_aden')">Gulf of Aden</button>
+      <button class="zone-tab zone-tab-mas_combined" data-zone="mas_combined" onclick="setZoneTab(this, 'mas_combined')">MAS</button>
+      <button class="zone-tab zone-tab-black_sea" data-zone="black_sea" onclick="setZoneTab(this, 'black_sea')">Black Sea</button>
+      <button class="zone-tab zone-tab-north_africa" data-zone="north_africa" onclick="setZoneTab(this, 'north_africa')">North Africa</button>
+      <button class="zone-tab zone-tab-zeynep_c" data-zone="zeynep_c" onclick="setZoneTab(this, 'zeynep_c')">Zeynep C</button>
+    </div>
+  </div>
+  
+  <!-- Table -->
+  <div class="table-container">
+    <table id="voyages-table" class="voyages-table">
+      <colgroup>
+        <col class="col-vessel">
+        <col class="col-charterer">
+        <col class="risk-zone-col col-zone">
+        <col class="col-timeline">
+        <col class="col-notes">
+        <col class="col-actions">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Vessel</th>
+          <th>Charterer</th>
+          <th class="risk-zone-col">Risk Zone</th>
+          <th>Timeline (Ports & EWR)</th>
+          <th>Notes</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="voyages-body">
+        <tr><td colspan="5" class="loading-cell">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     VOYAGE FORM MODAL
+═══════════════════════════════════════════════════════════════════════════ -->
+<div id="voyage-modal" class="modal" style="display:none">
+  <div class="modal-overlay" onclick="closeModal('voyage-modal')"></div>
+  <div class="modal-box modal-large">
+    <div class="modal-header">
+      <h2 id="form-title">Add New Voyage</h2>
+      <button class="modal-close" onclick="closeModal('voyage-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="voyage-form" onsubmit="submitVoyage(event)">
+        <input type="hidden" id="f-id">
+        <input type="hidden" id="f-is-zeynep" value="0">
+        <input type="hidden" id="f-year-form">
+        <input type="hidden" id="f-status" value="active">
+
+        <div class="form-grid voyage-basics-grid">
+          <div class="form-group" id="zone-group">
+            <label>Risk Zone *</label>
+            <select id="f-zone-select" onchange="onZoneChange()" required>
+              <option value="">Select...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Vessel Name *</label>
+            <select id="f-vesselName" required onchange="onVesselProfileChange()">
+              <option value="">Select risk zone first...</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Charterer</label>
+            <input type="text" id="f-charterer-form" autocomplete="off" list="list-charterers" placeholder="Charterer...">
+            <datalist id="list-charterers"></datalist>
+          </div>
+          <div class="form-group">
+            <label>Service</label>
+            <select id="f-service">
+              <option value="">Select service...</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="zeynep-zone-section" class="zeynep-zone-section" style="display:none">
+          <div class="form-group">
+            <label>Zone / Area Name</label>
+            <input type="text" id="f-zeynep-zone-name" placeholder="Optional area name...">
+          </div>
+        </div>
+
+        <div id="calc-rule-note" class="calc-rule-note" style="display:none"></div>
+
+        <!-- Zone times -->
+        <div class="zone-times-section" id="zone-times-section">
+          <div class="section-head-row">
+            <h3>Zone Times</h3>
+            <div class="zone-window-toggles">
+              <label class="zone-window-toggle"><input type="checkbox" id="f-zone-main-enabled" onchange="onZoneWindowToggle('main')"> <span id="zone-main-toggle-label">Show zone entry / exit</span></label>
+              <label id="zeynep-no-zone-wrap" class="zone-disable-toggle" style="display:none"><input type="checkbox" id="f-zeynep-no-zone" onchange="onZeynepZoneToggle()" checked> No zone times</label>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label id="lbl-zoneEntry">Zone Entry</label>
+              <div class="time-confirm-row">
+                <input type="datetime-local" id="f-zoneEntry" lang="en-GB" oninput="onZoneManualEdit('Entry')">
+                <label class="confirm-label">
+                  <input type="checkbox" id="f-zoneEntryConfirmed" onchange="onConfirmToggle('Entry')">
+                  <span class="confirm-badge">Actual</span>
+                </label>
+              </div>
+              <small id="calc-entry-hint" class="calc-hint"></small>
+            </div>
+            <div class="form-group">
+              <label id="lbl-zoneExit">Zone Exit</label>
+              <div class="time-confirm-row">
+                <input type="datetime-local" id="f-zoneExit" lang="en-GB" oninput="onZoneManualEdit('Exit')">
+                <label class="confirm-label">
+                  <input type="checkbox" id="f-zoneExitConfirmed" onchange="onConfirmToggle('Exit')">
+                  <span class="confirm-badge">Actual</span>
+                </label>
+              </div>
+              <small id="calc-exit-hint" class="calc-hint"></small>
+            </div>
+          </div>
+          
+          <div class="section-head-row zone-return-head" id="zone-return-head" style="display:none; margin-top:10px;">
+            <h3>Return Zone Times</h3>
+            <label class="zone-window-toggle"><input type="checkbox" id="f-zone-return-enabled" onchange="onZoneWindowToggle('return')"> <span id="zone-return-toggle-label">Show HRA inbound</span></label>
+          </div>
+          <div class="form-grid" id="zone-return-times" style="display:none; margin-top:10px;">
+            <div class="form-group">
+              <label>Return Entry (Inbound)</label>
+              <div class="time-confirm-row">
+                  <input type="datetime-local" id="f-zoneEntryReturn" lang="en-GB" oninput="onZoneManualEdit('EntryReturn')">
+                <label class="confirm-label">
+                  <input type="checkbox" id="f-zoneEntryReturnConfirmed" onchange="onConfirmToggle('EntryReturn')">
+                  <span class="confirm-badge">Actual</span>
+                </label>
+              </div>
+              <small id="calc-entry-return-hint" class="calc-hint"></small>
+            </div>
+            <div class="form-group">
+              <label>Return Exit (Inbound)</label>
+              <div class="time-confirm-row">
+                  <input type="datetime-local" id="f-zoneExitReturn" lang="en-GB" oninput="onZoneManualEdit('ExitReturn')">
+                <label class="confirm-label">
+                  <input type="checkbox" id="f-zoneExitReturnConfirmed" onchange="onConfirmToggle('ExitReturn')">
+                  <span class="confirm-badge">Actual</span>
+                </label>
+              </div>
+              <small id="calc-exit-return-hint" class="calc-hint"></small>
+            </div>
+          </div>
+        </div>
+
+        <!-- Port calls -->
+        <div class="ports-section">
+          <div class="ports-header">
+            <h3>Port Calls</h3>
+            <div class="ports-actions">
+              <button type="button" class="btn btn-sm btn-outline" onclick="addPortRow()">+ Add Port</button>
+            </div>
+          </div>
+          <div id="port-calls-list" class="port-calls-list">
+            <!-- injected by JS -->
+          </div>
+          <small class="drag-hint">You can drag and drop rows to reorder them.</small>
+        </div>
+
+        <div class="notes-section">
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea id="f-notes" rows="3" placeholder="Rotation change, dry dock, name change, omission reason..."></textarea>
+          </div>
+        </div>
+
+        <div class="form-footer">
+          <button type="button" class="btn btn-outline" onclick="closeModal('voyage-modal')">Cancel</button>
+          <button type="submit" class="btn btn-success" id="btn-save-voyage">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     ADMIN MODAL
+═══════════════════════════════════════════════════════════════════════════ -->
+<div id="admin-modal" class="modal" style="display:none">
+  <div class="modal-overlay" onclick="closeModal('admin-modal')"></div>
+  <div class="modal-box modal-large">
+    <div class="modal-header">
+      <h2>⚙ Settings</h2>
+      <button class="modal-close" onclick="closeModal('admin-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <section class="admin-section">
+        <h3>Archive Year</h3>
+        <p>Archive moves records ending before 20.10 of the selected year into read-only storage. Records dated 20.10 are excluded and stay active.</p>
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Year to Archive</label>
+            <select id="admin-archive-year">
+              <option value="">Select...</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-danger" onclick="doArchive()">Archive Until 20.10</button>
+        <div id="admin-archive-result" class="admin-result"></div>
+      </section>
+
+      <hr>
+
+      <section class="admin-section">
+        <h3>Service Lifecycle</h3>
+        <p>Open a service before using it for new voyages. Closing a service moves its active records into legacy, where they remain available for dashboard view and export.</p>
+        <div class="service-lifecycle-grid">
+          <div class="service-card">
+            <h4>Open New Service</h4>
+            <div class="form-grid service-form-grid">
+              <div class="form-group">
+                <label>Service Name</label>
+                <input type="text" id="admin-service-name" placeholder="Example: MAS 2026 Current">
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="openServiceFromAdmin()">Open Service</button>
+          </div>
+          <div class="service-card">
+            <h4>Close Active Service</h4>
+            <div class="form-grid service-form-grid">
+              <div class="form-group">
+                <label>Active Service</label>
+                <select id="admin-close-service">
+                  <option value="">Select...</option>
+                </select>
+              </div>
+            </div>
+            <button class="btn btn-danger" onclick="closeServiceFromAdmin()">Move to Legacy</button>
+          </div>
+        </div>
+        <div id="service-summary" class="service-summary"></div>
+        <div id="admin-service-result" class="admin-result"></div>
+      </section>
+
+      <hr>
+
+      <section class="admin-section">
+        <h3>Vessel Zone Assignments</h3>
+        <p>Add a vessel here, then choose which zones it should appear under.</p>
+        <div class="vessel-zone-layout">
+          <aside class="settings-zone-list vessel-profile-list">
+            <label>New Vessel</label>
+            <div class="vessel-add-row">
+              <input type="text" id="vessel-profile-new-name" placeholder="Vessel name" onkeydown="onVesselProfileNameKeydown(event)">
+              <button type="button" class="btn btn-outline btn-sm" onclick="addVesselProfileFromSettings()">+ Add</button>
+            </div>
+            <label>Vessels</label>
+            <select id="vessel-profile-select" size="10" onchange="onVesselProfileSelectChange()"></select>
+          </aside>
+          <div class="vessel-profile-editor">
+            <div class="formula-card">
+              <div class="formula-card-head"><div><strong id="vessel-profile-title">Select vessel</strong><span id="vessel-profile-subtitle">Zone membership</span></div><button type="button" id="vessel-profile-remove" class="btn btn-outline btn-sm" onclick="removeSelectedVesselProfile()">Remove</button></div>
+              <div id="vessel-zone-checkboxes" class="vessel-zone-checkboxes"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <hr>
+
+      <section class="admin-section">
+        <h3>Zone Time Rules</h3>
+        <div class="settings-rule-layout">
+          <aside class="settings-zone-list">
+            <button type="button" class="btn btn-outline btn-sm" onclick="addFormulaZone()">+ Add Zone</button>
+            <select id="formula-zone-select" size="8" onchange="onFormulaZoneSelectChange()"></select>
+          </aside>
+          <div id="formula-editor" class="formula-editor"></div>
+        </div>
+        <div class="settings-save-row">
+          <button class="btn btn-primary" onclick="saveAdminConfig()">Save Settings</button>
+          <div id="admin-config-result" class="admin-result"></div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     CONFIRM DIALOG
+═══════════════════════════════════════════════════════════════════════════ -->
+<div id="confirm-modal" class="modal" style="display:none">
+  <div class="modal-overlay"></div>
+  <div class="modal-box modal-small">
+    <div class="modal-header">
+      <h2 id="confirm-title">Confirm</h2>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-message"></p>
+      <div class="form-footer">
+        <button class="btn btn-outline" onclick="confirmReject()">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok-btn" onclick="confirmAccept()">Yes, Proceed</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div id="toast" class="toast" style="display:none"></div>
+
+<script src="js/voyageEditor.js"></script>
+<script src="js/timelineEvents.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

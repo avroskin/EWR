@@ -209,6 +209,14 @@ body {
   width: 100%;
 }
 
+.filter-group select[multiple] {
+  min-height: 120px;
+  padding: 6px 8px;
+}
+
+.filter-group select[multiple] option {
+  padding: 4px 6px;
+}
 .filter-group input:focus,
 .filter-group select:focus {
   outline: none;

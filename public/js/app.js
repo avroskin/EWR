@@ -341,7 +341,7 @@ function getFilterParams() {
     params.status = 'active'; // Only show active by default
   }
   
-  const vessel    = document.getElementById('f-vessel')?.value.trim();
+  const vesselValues = selectedValues('f-vessel');
   const charterer = document.getElementById('f-charterer')?.value.trim();
   const zone      = document.getElementById('f-zone')?.value;
   const port      = document.getElementById('f-port')?.value.trim();
@@ -349,7 +349,7 @@ function getFilterParams() {
   const dateFrom  = displayDateToIso(document.getElementById('f-date-from')?.value);
   const dateTo    = displayDateToIso(document.getElementById('f-date-to')?.value);
 
-  if (vessel)    params.vessel    = vessel;
+  if (vesselValues.length) params.vessel = vesselValues.join(',');
   if (charterer) params.charterer = charterer;
   if (!legacyService && zone === 'zeynep_c') { params.zeynepC = '1'; }
   else if (!legacyService && zone) { params.zone = zone; }
@@ -361,6 +361,23 @@ function getFilterParams() {
   return params;
 }
 
+function selectedValues(id) {
+  const el = document.getElementById(id);
+  if (!el) return [];
+  if (el.multiple) return [...el.selectedOptions].map(option => option.value.trim()).filter(Boolean);
+  const value = el.value.trim();
+  return value ? [value] : [];
+}
+
+function clearSelect(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (el.multiple) {
+    [...el.options].forEach(option => { option.selected = false; });
+  } else {
+    el.value = '';
+  }
+}
 function scheduleFilter() {
   clearTimeout(filterTimer);
   filterTimer = setTimeout(loadVoyages, 300);
@@ -379,7 +396,7 @@ function onLegacyServiceChange() {
 }
 
 function clearFilters() {
-  document.getElementById('f-vessel').value    = '';
+  clearSelect('f-vessel');
   document.getElementById('f-charterer').value = '';
   const fLegacy = document.getElementById('f-legacy');
   if (fLegacy) fLegacy.value = '';
@@ -413,7 +430,7 @@ function setZoneTab(btn, zone) {
 function clearTimelineFiltersForZoneTab() {
   ['f-vessel', 'f-charterer', 'f-port', 'f-confirmed', 'f-date-from', 'f-date-to', 'f-date-preset'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.value = '';
+    if (el) clearSelect(id);
   });
 }
 
@@ -1107,11 +1124,17 @@ function setDatalist(id, values) {
 function setSelectOptions(id, placeholder, values) {
   const el = document.getElementById(id);
   if (el && el.tagName === 'SELECT') {
-    const currentVal = el.value;
+    const currentVals = el.multiple ? selectedValues(id) : (el.value ? [el.value] : []);
     const options = Array.isArray(values) ? [...values] : [];
-    if (currentVal && !options.includes(currentVal)) options.unshift(currentVal);
+    currentVals.forEach(value => {
+      if (value && !options.includes(value)) options.unshift(value);
+    });
     el.innerHTML = `<option value="">${placeholder}</option>` + options.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
-    el.value = currentVal;
+    if (el.multiple) {
+      [...el.options].forEach(option => { option.selected = currentVals.includes(option.value); });
+    } else {
+      el.value = currentVals[0] || '';
+    }
   }
 }
 

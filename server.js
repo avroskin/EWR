@@ -113,7 +113,7 @@ function normalizeVesselProfiles(profiles) {
   if (!Array.isArray(profiles)) return [];
   return profiles.map(profile => ({
     name: String(profile.name || '').trim(),
-    charterer: String(profile.charterer || '').trim(),
+    charterer: normalizeChartererName(profile.charterer),
     zones: sanitizeStringList(profile.zones || [])
   })).filter(profile => profile.name);
 }
@@ -121,7 +121,7 @@ function normalizeVesselProfiles(profiles) {
 function normalizeConfig(cfg) {
   const normalized = {
     vessels: Array.isArray(cfg.vessels) ? cfg.vessels : [],
-    charterers: Array.isArray(cfg.charterers) ? cfg.charterers : [],
+    charterers: sanitizeStringList((Array.isArray(cfg.charterers) ? cfg.charterers : []).map(normalizeChartererName)),
     services: Array.isArray(cfg.services) ? cfg.services : [],
     vesselProfiles: normalizeVesselProfiles(cfg.vesselProfiles || []),
     riskZones: Array.isArray(cfg.riskZones) && cfg.riskZones.length ? cfg.riskZones : defaultRiskZones()
@@ -516,10 +516,23 @@ function sameFilterValue(actual, expected) {
   return normalizeFilterValue(actual) === normalizeFilterValue(expected);
 }
 
+function filterValues(value) {
+  const values = Array.isArray(value) ? value : String(value || '').split(',');
+  return values.map(item => normalizeServiceName(item)).filter(Boolean);
+}
+
+function matchesAnyFilterValue(actual, expectedValues) {
+  return expectedValues.some(expected => sameFilterValue(actual, expected));
+}
+
+
 function applyFilters(voyages, q) {
   let result = voyages;
 
-  if (q.vessel)      result = result.filter(v => sameFilterValue(v.vesselName, q.vessel));
+  if (q.vessel) {
+    const vessels = filterValues(q.vessel);
+    if (vessels.length) result = result.filter(v => matchesAnyFilterValue(v.vesselName, vessels));
+  }
   if (q.charterer)   result = result.filter(v => sameFilterValue(normalizeChartererName(v.charterer), normalizeChartererName(q.charterer)));
   if (q.service)     result = result.filter(v => sameFilterValue(v.service, q.service));
   if (q.zone) {

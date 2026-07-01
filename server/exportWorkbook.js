@@ -48,6 +48,11 @@ function getPortCalls(voyage) {
   return Array.isArray(voyage.portCalls) ? voyage.portCalls : [];
 }
 
+function normalizeChartererName(value) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  return clean.toLowerCase() === 'cma' ? 'CMA CGM' : clean;
+}
+
 function warningText(warnings) {
   return (warnings || []).map(warning => {
     const context = warning.context ? ' | ' + warning.context : '';
@@ -201,7 +206,7 @@ function addInsuranceSheet(workbook, voyages, config, warningsById) {
     events.forEach((event, index) => {
       const rowData = {
         vesselName: voyage.vesselName || '',
-        charterer: voyage.charterer || '',
+        charterer: normalizeChartererName(voyage.charterer) || '',
         area: getAreaShortName(voyage, config),
         routeItem: event.name || '',
         entryTime: event.entry || '',

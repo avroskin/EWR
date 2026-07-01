@@ -652,8 +652,8 @@ function renderTable(list) {
     const rowWarningClass = issueCount ? ' warning-row' : '';
     const readOnlyRow = isArchivedYear || v.status === 'legacy';
     return `<tr class="row-zone-${zoneKey}${rowWarningClass}${readOnlyRow ? ' archived-row' : ''}"${readOnlyRow ? '' : ` onclick="openEditForm('${v.id}')"`}> 
-      <td class="vessel-cell"><div class="name-cell-wrap">${nameFitHtml(v.vesselName || '—', 'vessel-name-fit', 14)}${issuePill}</div></td>
-      <td class="charterer-cell">${nameFitHtml(v.charterer || '—', 'charterer-name-fit', 13)}</td>
+      <td class="vessel-cell"><div class="name-cell-wrap">${nameFitHtml(v.vesselName || '—', 'vessel-name-fit')}${issuePill}</div></td>
+      <td class="charterer-cell">${nameFitHtml(normalizeChartererName(v.charterer) || '—', 'charterer-name-fit')}</td>
       ${timelineCell}
       ${notesCell}
       <td class="row-actions-cell" onclick="event.stopPropagation()">
@@ -719,18 +719,14 @@ function fmtUpdated(iso) {
   return `Updated ${dd}/${mm} ${hh}:${min}`;
 }
 
-function nameFontSize(value, base = 14, min = 10) {
-  const len = String(value || '').trim().length;
-  if (len > 20) return min;
-  if (len > 16) return Math.max(min, base - 4);
-  if (len > 12) return Math.max(min, base - 3);
-  if (len > 9) return Math.max(min, base - 1);
-  return base;
+function normalizeChartererName(value) {
+  const clean = String(value || '').replace(/\s+/g, ' ').trim();
+  return clean.toLowerCase() === 'cma' ? 'CMA CGM' : clean;
 }
 
-function nameFitHtml(value, className, base = 14) {
+function nameFitHtml(value, className) {
   const text = value || '-';
-  return `<span class="${className}" style="font-size:${nameFontSize(text, base)}px" title="${escAttr(text)}">${esc(text)}</span>`;
+  return `<span class="${className}" title="${escAttr(text)}">${esc(text)}</span>`;
 }
 
 function updateDashboardLastUpdated(list) {
@@ -1188,7 +1184,7 @@ async function openEditForm(id) {
     document.getElementById('f-status').value = v.status || 'active';
     document.getElementById('f-is-zeynep').value = v.isZeynepC ? '1' : '0';
     renderVesselOptions(v.zone || '', v.vesselName || '');
-    document.getElementById('f-charterer-form').value = v.charterer || '';
+    document.getElementById('f-charterer-form').value = normalizeChartererName(v.charterer) || '';
     document.getElementById('f-service').value    = v.service    || '';
     document.getElementById('f-notes').value = v.notes || '';
     document.getElementById('f-zeynep-zone-name').value = v.zeynepZoneName || '';

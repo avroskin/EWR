@@ -14,6 +14,7 @@ let adminEditingVesselProfiles = [];
 let adminRemovedVesselNames = new Set();
 let filterTimer = null;
 let confirmCallback = null;
+let selectedVesselFilters = new Set();
 
 // ── Zone metadata ─────────────────────────────────────────────────────────────
 let ZONE_LABELS = {
@@ -341,7 +342,7 @@ function getFilterParams() {
     params.status = 'active'; // Only show active by default
   }
   
-  const vesselValues = selectedValues('f-vessel');
+  const vesselValues = selectedVesselValues();
   const charterer = document.getElementById('f-charterer')?.value.trim();
   const zone      = document.getElementById('f-zone')?.value;
   const port      = document.getElementById('f-port')?.value.trim();
@@ -361,6 +362,82 @@ function getFilterParams() {
   return params;
 }
 
+function selectedVesselValues() {
+  return [...selectedVesselFilters].filter(Boolean);
+}
+
+function syncVesselFilterValue() {
+  const hidden = document.getElementById('f-vessel');
+  if (hidden) hidden.value = selectedVesselValues().join(',');
+}
+
+function updateVesselFilterSummary() {
+  const summary = document.getElementById('f-vessel-summary');
+  if (!summary) return;
+  const values = selectedVesselValues();
+  if (!values.length) summary.textContent = 'All';
+  else if (values.length === 1) summary.textContent = values[0];
+  else summary.textContent = values.length + ' selected';
+}
+
+function toggleVesselFilterMenu() {
+  const menu = document.getElementById('f-vessel-menu');
+  const trigger = document.getElementById('f-vessel-trigger');
+  if (!menu) return;
+  const open = !menu.classList.contains('open');
+  menu.classList.toggle('open', open);
+  if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  if (open) {
+    renderVesselFilterOptions();
+    setTimeout(() => document.getElementById('f-vessel-search')?.focus(), 0);
+  }
+}
+
+function closeVesselFilterMenu() {
+  const menu = document.getElementById('f-vessel-menu');
+  const trigger = document.getElementById('f-vessel-trigger');
+  if (menu) menu.classList.remove('open');
+  if (trigger) trigger.setAttribute('aria-expanded', 'false');
+}
+
+function closeVesselFilterMenuOnOutsideClick(event) {
+  if (!event.target.closest('#vessel-filter')) closeVesselFilterMenu();
+}
+
+function onVesselFilterToggle(value, checked) {
+  if (checked) selectedVesselFilters.add(value);
+  else selectedVesselFilters.delete(value);
+  syncVesselFilterValue();
+  updateVesselFilterSummary();
+  scheduleFilter();
+}
+
+function clearVesselFilter(options = {}) {
+  selectedVesselFilters.clear();
+  const search = document.getElementById('f-vessel-search');
+  if (search) search.value = '';
+  syncVesselFilterValue();
+  renderVesselFilterOptions();
+  updateVesselFilterSummary();
+  if (!options.silent) scheduleFilter();
+}
+
+function renderVesselFilterOptions() {
+  const container = document.getElementById('f-vessel-options');
+  if (!container) return;
+  const allVessels = [...new Set(config.vessels || [])].filter(Boolean).sort((a, b) => a.localeCompare(b));
+  selectedVesselFilters = new Set([...selectedVesselFilters].filter(value => allVessels.includes(value)));
+  const search = String(document.getElementById('f-vessel-search')?.value || '').trim().toLowerCase();
+  const visible = search ? allVessels.filter(value => value.toLowerCase().includes(search)) : allVessels;
+  container.innerHTML = visible.length
+    ? visible.map(value => `<label class="multi-select-option"><input type="checkbox" value="${escAttr(value)}"${selectedVesselFilters.has(value) ? ' checked' : ''}> <span>${esc(value)}</span></label>`).join('')
+    : '<div class="multi-select-empty">No vessels found</div>';
+  container.querySelectorAll('input[type="checkbox"]').forEach(input => {
+    input.addEventListener('change', () => onVesselFilterToggle(input.value, input.checked));
+  });
+  syncVesselFilterValue();
+  updateVesselFilterSummary();
+}
 function selectedValues(id) {
   const el = document.getElementById(id);
   if (!el) return [];
@@ -396,7 +473,7 @@ function onLegacyServiceChange() {
 }
 
 function clearFilters() {
-  clearSelect('f-vessel');
+  clearVesselFilter({ silent: true });
   document.getElementById('f-charterer').value = '';
   const fLegacy = document.getElementById('f-legacy');
   if (fLegacy) fLegacy.value = '';
@@ -430,7 +507,8 @@ function setZoneTab(btn, zone) {
 function clearTimelineFiltersForZoneTab() {
   ['f-vessel', 'f-charterer', 'f-port', 'f-confirmed', 'f-date-from', 'f-date-to', 'f-date-preset'].forEach(id => {
     const el = document.getElementById(id);
-    if (el) clearSelect(id);
+    if (id === 'f-vessel') clearVesselFilter({ silent: true });
+    else if (el) clearSelect(id);
   });
 }
 
@@ -1111,7 +1189,7 @@ function areAllDatedEventsCompleted(dates) {
 function updateDatalistOptions() {
   setDatalist('list-charterers', config.charterers || []);
 
-  setSelectOptions('f-vessel', 'All', config.vessels || []);
+  renderVesselFilterOptions();
   setSelectOptions('f-charterer', 'All', config.charterers || []);
   setSelectOptions('f-service', 'Select service...', config.services || []);
 }

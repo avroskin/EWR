@@ -35,11 +35,20 @@
           <option value="">Loading...</option>
         </select>
       </div>
-      <div class="filter-group">
+      <div class="filter-group vessel-filter-group" id="vessel-filter">
         <label>Vessels</label>
-        <select id="f-vessel" multiple size="4" onchange="scheduleFilter()">
-          <option value="">All</option>
-        </select>
+        <input type="hidden" id="f-vessel" value="">
+        <button type="button" class="multi-select-trigger" id="f-vessel-trigger" onclick="toggleVesselFilterMenu()" aria-haspopup="listbox" aria-expanded="false">
+          <span id="f-vessel-summary">All</span>
+          <span class="multi-select-caret">▾</span>
+        </button>
+        <div class="multi-select-menu" id="f-vessel-menu" role="listbox" aria-label="Vessels">
+          <input type="text" id="f-vessel-search" class="multi-select-search" placeholder="Search vessel..." oninput="renderVesselFilterOptions()">
+          <div class="multi-select-actions">
+            <button type="button" onclick="clearVesselFilter()">Clear</button>
+          </div>
+          <div class="multi-select-options" id="f-vessel-options"></div>
+        </div>
       </div>
       <div class="filter-group">
         <label>Charterer</label>

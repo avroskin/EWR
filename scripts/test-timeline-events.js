@@ -96,6 +96,22 @@ function main() {
   assert.equal(masSavedZoneRow.entryTime, 'Actual Entry 20/05/2026 06:00');
   assert.equal(masSavedZoneRow.exitTime, 'Actual Exit 25/05/2026 14:40');
 
+  const masManualOverride = {
+    voyage: {
+      zone: 'mas_combined',
+      zoneEntry: '2026-02-09T20:00:00.000Z',
+      zoneExit: '2026-02-14T08:00:00.000Z',
+      portCalls: [
+        { port: 'Tincan', eta: '2026-02-10T12:00:00.000Z', ets: '2026-02-11T14:00:00.000Z', omit: false },
+        { port: 'Apapa', eta: '2026-02-12T06:00:00.000Z', ets: '2026-02-13T18:00:00.000Z', omit: false }
+      ]
+    }
+  };
+  const masManualEvents = buildTimelineEvents(masManualOverride.voyage, config, routeResult(masManualOverride));
+  const masManualWindow = masManualEvents.find(event => event.kind === 'zone_window');
+  assert.equal(masManualWindow.entry, '2026-02-09T20:00:00.000Z', 'Dashboard timeline should prefer saved manual entry over recalculation');
+  assert.equal(masManualWindow.exit, '2026-02-14T08:00:00.000Z', 'Dashboard timeline should prefer saved manual exit over recalculation');
+
   const eastMedSavedZone = {
     voyage: {
       zone: 'east_med',
@@ -123,7 +139,7 @@ function main() {
   assert.equal(zeynepManualRows[0].entryTime, 'Entry 02/08/2026 03:00');
   assert.equal(zeynepManualRows[0].exitTime, 'Exit 04/08/2026 01:00');
 
-  console.log('Timeline/export event fixtures OK: 6 focused checks.');
+  console.log('Timeline/export event fixtures OK: 7 focused checks.');
 }
 
 main();

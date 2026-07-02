@@ -47,6 +47,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   populateYearSelectors();
   await loadLegacyDropdown();
   await loadVoyages();
+  document.addEventListener('click', closeVesselFilterMenuOnOutsideClick);
+  window.addEventListener('resize', positionVesselFilterMenu);
+  window.addEventListener('scroll', positionVesselFilterMenu, true);
 });
 
 // ── Data loading ──────────────────────────────────────────────────────────────
@@ -225,7 +228,7 @@ function renderRiskZoneControls() {
   const tabs = document.querySelector('.zone-tabs-scroll');
   if (tabs) {
     tabs.innerHTML = dashboardZones.map(z => {
-      const zoneClass = z.key ? `zone-tab-${esc(z.key)}` : 'zone-tab-all';
+      const zoneClass = z.key ? `zone-tab-${cssSafeToken(z.key)}` : 'zone-tab-all';
       const activeClass = z.key === '' ? ' active' : '';
       return `<button class="zone-tab ${zoneClass}${activeClass}" data-zone="${esc(z.key)}" onclick="setZoneTab(this, '${esc(z.key)}')">${esc(z.label || z.key)}</button>`;
     }).join('');
@@ -380,6 +383,34 @@ function updateVesselFilterSummary() {
   else summary.textContent = values.length + ' selected';
 }
 
+function positionVesselFilterMenu() {
+  const menu = document.getElementById('f-vessel-menu');
+  const trigger = document.getElementById('f-vessel-trigger');
+  if (!menu || !trigger || !menu.classList.contains('open')) return;
+
+  const rect = trigger.getBoundingClientRect();
+  const viewportGap = 12;
+  const menuGap = 6;
+  const width = Math.min(320, Math.max(280, rect.width));
+  const left = Math.max(viewportGap, Math.min(rect.left, window.innerWidth - width - viewportGap));
+  let top = rect.bottom + menuGap;
+  let availableHeight = window.innerHeight - top - viewportGap;
+
+  if (availableHeight < 180 && rect.top > window.innerHeight - rect.bottom) {
+    availableHeight = Math.min(340, rect.top - viewportGap - menuGap);
+    top = Math.max(viewportGap, rect.top - availableHeight - menuGap);
+  }
+
+  const maxHeight = Math.max(180, Math.min(340, availableHeight));
+  menu.style.left = left + 'px';
+  menu.style.top = top + 'px';
+  menu.style.width = width + 'px';
+  menu.style.maxHeight = maxHeight + 'px';
+
+  const options = document.getElementById('f-vessel-options');
+  if (options) options.style.maxHeight = Math.max(96, maxHeight - 94) + 'px';
+}
+
 function toggleVesselFilterMenu() {
   const menu = document.getElementById('f-vessel-menu');
   const trigger = document.getElementById('f-vessel-trigger');
@@ -389,6 +420,7 @@ function toggleVesselFilterMenu() {
   if (trigger) trigger.setAttribute('aria-expanded', open ? 'true' : 'false');
   if (open) {
     renderVesselFilterOptions();
+    positionVesselFilterMenu();
     setTimeout(() => document.getElementById('f-vessel-search')?.focus(), 0);
   }
 }
@@ -679,7 +711,7 @@ function renderTable(list) {
           ? `<span class="zone-card-time ${exitDone ? 'confirmed' : ''}">Exit: ${fmtDate(item.exit)}</span>`
           : (item.manualNeeded ? '<span class="zone-card-time manual-needed-text">Exit: manual needed</span>' : '');
         const separator = entryHtml && exitHtml ? '<span class="timeline-separator">//</span>' : '';
-        return `<div class="port-card zone-card zone-range-card zone-card-${esc(item.zoneKey || '')} event-label-${eventLabelClass(item.eventLabel)} ${completed ? 'confirmed-card' : ''} ${inProgress ? 'in-zone-card' : ''} ${item.manualNeeded ? 'manual-needed-card' : ''}">
+        return `<div class="port-card zone-card zone-range-card zone-card-${cssSafeToken(item.zoneKey || '')} event-label-${eventLabelClass(item.eventLabel)} ${completed ? 'confirmed-card' : ''} ${inProgress ? 'in-zone-card' : ''} ${item.manualNeeded ? 'manual-needed-card' : ''}">
           <div class="zone-card-title">${item.title}</div>
           <div class="timeline-card-line">
             ${entryHtml}
@@ -689,7 +721,7 @@ function renderTable(list) {
         </div>`;
       } else if (item.type === 'zonePoint') {
         const completed = !!item.confirmed;
-        return `<div class="port-card zone-card zone-card-${esc(item.zoneKey || '')} event-label-${eventLabelClass(item.eventLabel)} ${completed ? 'confirmed-card' : ''}">
+        return `<div class="port-card zone-card zone-card-${cssSafeToken(item.zoneKey || '')} event-label-${eventLabelClass(item.eventLabel)} ${completed ? 'confirmed-card' : ''}">
           <div class="zone-card-title">${item.title}</div>
           <div class="timeline-card-line">
             <span class="zone-card-time ${completed ? 'confirmed' : ''}">${item.label}: ${fmtDate(item.date)}</span>
@@ -746,7 +778,7 @@ function renderTable(list) {
 
     const rowWarningClass = issueCount ? ' warning-row' : '';
     const readOnlyRow = isArchivedYear || v.status === 'legacy';
-    return `<tr class="row-zone-${zoneKey}${rowWarningClass}${readOnlyRow ? ' archived-row' : ''}"${readOnlyRow ? '' : ` onclick="openEditForm('${v.id}')"`}> 
+    return `<tr class="row-zone-${cssSafeToken(zoneKey)}${rowWarningClass}${readOnlyRow ? ' archived-row' : ''}"${readOnlyRow ? '' : ` onclick="openEditForm('${v.id}')"`}> 
       <td class="vessel-cell"><div class="name-cell-wrap">${nameFitHtml(v.vesselName || '—', 'vessel-name-fit')}${issuePill}</div></td>
       <td class="charterer-cell">${nameFitHtml(normalizeChartererName(v.charterer) || '—', 'charterer-name-fit')}</td>
       ${timelineCell}
@@ -1170,8 +1202,12 @@ function escAttr(str) {
   return esc(str).replace(/'/g, '&#39;');
 }
 
+function cssSafeToken(value) {
+  return String(value || 'zone').toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-|-$/g, '') || 'zone';
+}
+
 function eventLabelClass(label) {
-  return String(label || 'zone').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'zone';
+  return cssSafeToken(String(label || 'zone').replace(/_/g, '-'));
 }
 
 function isCompletedDate(iso) {
@@ -1219,7 +1255,8 @@ function setSelectOptions(id, placeholder, values) {
 // ── Add/Edit Form ─────────────────────────────────────────────────────────────
 let editingId = null;
 
-function openAddForm() {
+async function openAddForm() {
+  if (!(await ensureAdminPrivileges('add voyages'))) return;
   editingId = null;
   document.getElementById('form-title').textContent = 'Add New Voyage';
   document.getElementById('f-id').value = '';
@@ -1274,6 +1311,7 @@ function openAddForm() {
 }
 
 async function openEditForm(id) {
+  if (!(await ensureAdminPrivileges('edit voyages'))) return;
   try {
     const res = await fetch(`/api/voyages/${id}?year=${currentYear}`);
     if (!res.ok) throw new Error();
@@ -1577,6 +1615,7 @@ function getPortCallsFromForm() {
 // ── Submit voyage ─────────────────────────────────────────────────────────────
 async function submitVoyage(e) {
   e.preventDefault();
+  if (!(await ensureAdminPrivileges('save voyages'))) return;
 
   const id = document.getElementById('f-id').value;
   const payload = VoyageEditor.buildVoyagePayload({
@@ -1601,7 +1640,7 @@ async function submitVoyage(e) {
     const method = id ? 'PUT' : 'POST';
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
+      headers: adminHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(payload)
     });
 
@@ -1620,7 +1659,8 @@ async function submitVoyage(e) {
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────────
-function deleteVoyage(id) {
+async function deleteVoyage(id) {
+  if (!(await ensureAdminPrivileges('delete voyages'))) return;
   const voyage = voyages.find(v => v.id === id);
   const name = voyage ? `${voyage.vesselName} - ${ZONE_LABELS[voyage.zone] || voyage.zone || 'Zeynep C'}` : 'this record';
 
@@ -1629,7 +1669,7 @@ function deleteVoyage(id) {
     `Are you sure you want to delete "${name}"? This action cannot be undone.`,
     async () => {
       try {
-        const res = await fetch(`/api/voyages/${id}?year=${currentYear}`, { method: 'DELETE' });
+        const res = await fetch(`/api/voyages/${id}?year=${currentYear}`, { method: 'DELETE', headers: adminHeaders() });
         if (!res.ok) throw new Error();
         showToast('Record deleted.', 'success');
         await loadLegacyDropdown();
@@ -1656,8 +1696,27 @@ function adminHeaders(extra = {}) {
   return { ...extra, ...(adminToken ? { 'x-admin-token': adminToken } : {}) };
 }
 
+async function refreshAdminStatus() {
+  if (settingsUnlocked) return true;
+  try {
+    const res = await fetch('/api/admin/status', { headers: adminHeaders() });
+    const data = await res.json();
+    settingsUnlocked = !!data.admin;
+    return settingsUnlocked;
+  } catch {
+    return false;
+  }
+}
+
+async function ensureAdminPrivileges(actionLabel = 'make changes') {
+  if (await refreshAdminStatus()) return true;
+  const ok = await unlockSettings();
+  if (!ok) showToast('Admin privileges are required to ' + actionLabel + '.', 'error');
+  return ok;
+}
+
 async function unlockSettings() {
-  const entered = window.prompt('Settings password');
+  const entered = window.prompt('Admin password');
   if (!entered) return false;
   try {
     const res = await fetch('/api/admin/unlock', {
@@ -1677,7 +1736,7 @@ async function unlockSettings() {
 }
 
 async function openAdmin() {
-  if (!settingsUnlocked && !(await unlockSettings())) return;
+  if (!(await ensureAdminPrivileges('open settings'))) return;
 
   const cfg = config;
   adminRiskZonesSnapshot = JSON.stringify(cfg.riskZones || [], null, 2);

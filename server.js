@@ -15,9 +15,13 @@ const PORT = parseInt(process.env.PORT, 10) || 3002;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = path.join(__dirname, 'data');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
-const SETTINGS_PASSWORD = process.env.EWR_SETTINGS_PASSWORD || '1881';
+const DEFAULT_SETTINGS_PASSWORD_HASH = ['74ed65a2d22a92c3', 'b4e013c15ff04d05', 'f4954cd792d9cf56', 'e9a0edad5f914ed1'].join('');
+const SETTINGS_PASSWORD = process.env.EWR_SETTINGS_PASSWORD || '';
+const SETTINGS_PASSWORD_HASH = process.env.EWR_SETTINGS_PASSWORD_HASH || DEFAULT_SETTINGS_PASSWORD_HASH;
 const ADMIN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 const adminTokens = new Map();
+const adminIpSessions = new Map();
+let writeQueue = Promise.resolve();
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -78,6 +82,7 @@ function readVoyages(year) {
 function writeVoyages(year, voyages) {
   writeJSON(voyagesFile(year), voyages);
 }
+
 
 function hasArchive(year) {
   return fs.existsSync(archiveFile(year));
@@ -161,20 +166,65 @@ function authError(message = 'Settings authorization is required.') {
   return err;
 }
 
-function issueAdminToken() {
+function hashSecret(value) {
+  return crypto.createHash('sha256').update(String(value || '')).digest('hex');
+}
+
+function sameSecret(actual, expected) {
+  const left = Buffer.from(String(actual || ''), 'utf8');
+  const right = Buffer.from(String(expected || ''), 'utf8');
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function passwordMatches(value) {
+  const password = String(value || '');
+  if (!password) return false;
+  if (SETTINGS_PASSWORD && sameSecret(password, SETTINGS_PASSWORD)) return true;
+  return sameSecret(hashSecret(password), SETTINGS_PASSWORD_HASH);
+}
+
+function adminClientIp(req) {
+  const raw = String(req.socket?.remoteAddress || req.ip || '').trim();
+  return raw.replace(/^::ffff:/, '') || 'unknown';
+}
+
+function markAdminIp(req) {
+  const ip = adminClientIp(req);
+  adminIpSessions.set(ip, Date.now() + ADMIN_TOKEN_TTL_MS);
+  console.log(`[ADMIN] ${ip} unlocked edit privileges until ${new Date(adminIpSessions.get(ip)).toISOString()}`);
+}
+
+function hasAdminIp(req) {
+  const ip = adminClientIp(req);
+  const expiresAt = adminIpSessions.get(ip);
+  if (!expiresAt || expiresAt < Date.now()) {
+    if (expiresAt) adminIpSessions.delete(ip);
+    return false;
+  }
+  adminIpSessions.set(ip, Date.now() + ADMIN_TOKEN_TTL_MS);
+  return true;
+}
+
+function issueAdminToken(req) {
   const token = crypto.randomBytes(32).toString('hex');
   adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
+  markAdminIp(req);
   return token;
 }
 
-function requireAdmin(req) {
+function hasAdminAccess(req) {
   const token = String(req.get('x-admin-token') || '');
   const expiresAt = adminTokens.get(token);
-  if (!token || !expiresAt || expiresAt < Date.now()) {
-    if (token) adminTokens.delete(token);
-    throw authError();
+  if (token && expiresAt && expiresAt >= Date.now()) {
+    adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
+    return true;
   }
-  adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
+  if (token) adminTokens.delete(token);
+  return hasAdminIp(req);
+}
+
+function requireAdmin(req) {
+  if (!hasAdminAccess(req)) throw authError();
 }
 
 function parseYear(value) {
@@ -255,6 +305,7 @@ function normalizeRiskZones(riskZones) {
   return riskZones.map(zone => {
     if (!zone || !String(zone.key || '').trim()) throw inputError('Every risk zone needs a key.');
     const key = String(zone.key).trim();
+    if (!/^[a-z0-9_]+$/.test(key)) throw inputError('Risk zone keys may only use lowercase letters, numbers, and underscores: ' + key);
     if (seenKeys.has(key)) throw inputError('Risk zone keys must be unique: ' + key);
     seenKeys.add(key);
     const formula = zone.formula && typeof zone.formula === 'object' ? zone.formula : { type: 'manual' };
@@ -581,23 +632,52 @@ function applyFilters(voyages, q) {
   return result;
 }
 
+function mutationNeedsWriteLock(req) {
+  return ['POST', 'PUT', 'DELETE'].includes(req.method) && /^\/api\/(voyages|services|archive|config)(?:\/|$)/.test(req.path);
+}
+
+function mutationWriteLock(req, res, next) {
+  if (!mutationNeedsWriteLock(req)) return next();
+
+  let release = () => {};
+  const previous = writeQueue;
+  writeQueue = new Promise(resolve => { release = resolve; });
+
+  previous.finally(() => {
+    let released = false;
+    const releaseOnce = () => {
+      if (released) return;
+      released = true;
+      release();
+    };
+    res.once('finish', releaseOnce);
+    res.once('close', releaseOnce);
+    next();
+  });
+}
+
+app.use(mutationWriteLock);
 // ── API Routes ───────────────────────────────────────────────────────────────
 
 // POST /api/admin/unlock
 app.post('/api/admin/unlock', (req, res) => {
   try {
-    if (String(req.body.password || '') !== SETTINGS_PASSWORD) throw authError('Settings password is incorrect.');
-    res.json({ token: issueAdminToken(), expiresInMs: ADMIN_TOKEN_TTL_MS });
+    if (!passwordMatches(req.body.password)) throw authError('Settings password is incorrect.');
+    res.json({ token: issueAdminToken(req), expiresInMs: ADMIN_TOKEN_TTL_MS });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Settings unlock failed.' });
   }
+});
+
+app.get('/api/admin/status', (req, res) => {
+  res.json({ admin: hasAdminAccess(req), expiresInMs: ADMIN_TOKEN_TTL_MS });
 });
 
 // GET /api/voyages
 app.get('/api/voyages', (req, res) => {
   try {
     ensureDataDir();
-    const year = parseInt(req.query.year) || currentYear();
+    const year = parseYear(req.query.year) || currentYear();
 
     const archiveOnly = req.query.archive === '1';
     let voyages;
@@ -623,7 +703,7 @@ app.get('/api/voyages', (req, res) => {
 app.get('/api/voyages/:id', (req, res) => {
   try {
     ensureDataDir();
-    const year = parseInt(req.query.year) || currentYear();
+    const year = parseYear(req.query.year) || currentYear();
     const archiveOnly = req.query.archive === '1';
     const voyages = archiveOnly || isArchived(year) ? readJSON(archiveFile(year), []) : readVoyages(year);
     const voyage = voyages.find(v => v.id === req.params.id);
@@ -636,8 +716,9 @@ app.get('/api/voyages/:id', (req, res) => {
 });
 
 // POST /api/voyages
-app.post('/api/voyages', (req, res) => {
+app.post('/api/voyages', async (req, res) => {
   try {
+    requireAdmin(req);
     ensureDataDir();
     const year = parseYear(req.body.year) || currentYear();
 
@@ -675,8 +756,9 @@ app.post('/api/voyages', (req, res) => {
 });
 
 // PUT /api/voyages/:id
-app.put('/api/voyages/:id', (req, res) => {
+app.put('/api/voyages/:id', async (req, res) => {
   try {
+    requireAdmin(req);
     ensureDataDir();
     const year = parseYear(req.body.year) || currentYear();
 
@@ -713,10 +795,11 @@ app.put('/api/voyages/:id', (req, res) => {
 });
 
 // DELETE /api/voyages/:id
-app.delete('/api/voyages/:id', (req, res) => {
+app.delete('/api/voyages/:id', async (req, res) => {
   try {
+    requireAdmin(req);
     ensureDataDir();
-    const year = parseInt(req.query.year) || currentYear();
+    const year = parseYear(req.query.year) || currentYear();
 
     if (isArchived(year)) return res.status(403).json({ error: 'Archived records cannot be deleted.' });
 
@@ -748,7 +831,7 @@ app.get('/api/services', (req, res) => {
 });
 
 // POST /api/services/open
-app.post('/api/services/open', (req, res) => {
+app.post('/api/services/open', async (req, res) => {
   try {
     requireAdmin(req);
     const service = normalizeServiceName(req.body.service);
@@ -763,7 +846,7 @@ app.post('/api/services/open', (req, res) => {
 });
 
 // POST /api/services/close
-app.post('/api/services/close', (req, res) => {
+app.post('/api/services/close', async (req, res) => {
   try {
     requireAdmin(req);
     ensureDataDir();
@@ -811,7 +894,7 @@ app.get('/api/archives', (req, res) => {
 });
 
 // POST /api/archive/:year
-app.post('/api/archive/:year', (req, res) => {
+app.post('/api/archive/:year', async (req, res) => {
   try {
     requireAdmin(req);
     ensureDataDir();
@@ -871,7 +954,7 @@ app.get('/api/config', (req, res) => {
 });
 
 // POST /api/config
-app.post('/api/config', (req, res) => {
+app.post('/api/config', async (req, res) => {
   try {
     requireAdmin(req);
     ensureDataDir();
@@ -904,7 +987,7 @@ app.post('/api/calculate', (req, res) => {
 app.get('/api/audit', (req, res) => {
   try {
     ensureDataDir();
-    const year = parseInt(req.query.year) || currentYear();
+    const year = parseYear(req.query.year) || currentYear();
     const voyages = isArchived(year) ? readJSON(archiveFile(year), []) : readVoyages(year);
     res.json({ year, archived: isArchived(year), ...buildAuditReport(voyages) });
   } catch (err) {
@@ -917,7 +1000,7 @@ app.get('/api/audit', (req, res) => {
 app.get('/api/audit/export', async (req, res) => {
   try {
     ensureDataDir();
-    const year = parseInt(req.query.year) || currentYear();
+    const year = parseYear(req.query.year) || currentYear();
     const voyages = isArchived(year) ? readJSON(archiveFile(year), []) : readVoyages(year);
     const audit = buildAuditReport(voyages);
     const workbook = new ExcelJS.Workbook();
@@ -953,7 +1036,7 @@ app.get('/api/audit/export', async (req, res) => {
 app.get('/api/export', async (req, res) => {
   try {
     ensureDataDir();
-    const year = parseInt(req.query.year) || currentYear();
+    const year = parseYear(req.query.year) || currentYear();
 
     let voyages;
     if (isArchived(year)) {

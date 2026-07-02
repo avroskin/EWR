@@ -106,6 +106,14 @@ body {
   gap: 8px;
 }
 
+.header-action-divider {
+  width: 1px;
+  height: 28px;
+  margin: 0 4px;
+  background: rgba(255,255,255,0.28);
+  flex: 0 0 auto;
+}
+
 .year-badge {
   background: var(--blue);
   color: #fff;
@@ -117,13 +125,19 @@ body {
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
   padding: 7px 14px;
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
-  transition: opacity 0.15s, transform 0.1s;
+  line-height: 1.2;
+  text-decoration: none;
+  transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s, border-color 0.15s;
   white-space: nowrap;
 }
 .btn:hover  { opacity: 0.88; }
@@ -133,6 +147,26 @@ body {
 .btn-primary { background: var(--blue);      color: #fff; }
 .btn-export  { background: #5B9BD5;           color: #fff; }
 .btn-danger  { background: var(--red);        color: #fff; }
+.btn-risk-map {
+  color: #F8FEFF;
+  border: 1px solid rgba(125,211,252,0.58);
+  background:
+    linear-gradient(135deg, rgba(14,116,144,0.96), rgba(12,74,110,0.96) 58%, rgba(15,23,42,0.98));
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset, 0 8px 18px rgba(8,47,73,0.22);
+}
+.btn-risk-map:hover {
+  opacity: 1;
+  border-color: rgba(186,230,253,0.9);
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.14) inset, 0 10px 22px rgba(8,47,73,0.3);
+}
+.risk-map-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #22D3EE;
+  box-shadow: 0 0 0 3px rgba(34,211,238,0.18), 0 0 12px rgba(34,211,238,0.75);
+  flex: 0 0 auto;
+}
 .btn-outline {
   background: transparent;
   color: #fff;
@@ -252,17 +286,19 @@ body {
 
 .multi-select-menu {
   display: none;
-  position: absolute;
-  top: calc(100% + 6px);
+  position: fixed;
+  top: 0;
   left: 0;
   width: 280px;
+  max-width: calc(100vw - 24px);
   max-height: 340px;
   padding: 8px;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  z-index: 140;
+  z-index: 1000;
+  overflow: hidden;
 }
 
 .multi-select-menu.open {
@@ -1739,6 +1775,7 @@ hr { border: none; border-top: 1px solid var(--grey-200); margin: 20px 0; }
   :root { --header-height: 112px; }
   .app-header { flex-wrap: wrap; gap: 8px; align-items: flex-start; }
   .header-right { flex-wrap: wrap; }
+  .header-action-divider { height: 24px; }
   .filter-bar { padding: 10px 12px; }
   .filter-toolbar { gap: 10px; }
   .filter-group { min-width: 128px; }
@@ -1775,6 +1812,7 @@ hr { border: none; border-top: 1px solid var(--grey-200); margin: 20px 0; }
   .subtitle { font-size: 11px; }
   .header-right { width: 100%; }
   .header-right .btn { flex: 1 1 auto; justify-content: center; }
+  .header-action-divider { display: none; }
   .filter-group { min-width: 118px; }
   .record-count-badge { padding: 7px 10px; }
   .legacy-context-main { flex-wrap: wrap; }

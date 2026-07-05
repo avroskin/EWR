@@ -642,7 +642,9 @@ function buildDashboardTimeline(voyage) {
         ets: event.ets,
         etaConfirmed: event.etaConfirmed,
         etsConfirmed: event.etsConfirmed,
-        omit: event.omitted
+        omit: event.omitted,
+        arrivalEnabled: event.arrivalEnabled,
+        departureEnabled: event.departureEnabled
       }];
     }
     return [];
@@ -703,7 +705,7 @@ function renderTable(list) {
         const completed = !item.manualNeeded && (!!item.entry || !!item.exit) && (!item.entry || item.entryConfirmed) && (!item.exit || item.exitConfirmed);
         const entryDone = !!item.entryConfirmed;
         const exitDone = !!item.exitConfirmed;
-        const inProgress = entryDone && !!item.exit && !exitDone;
+        const inProgress = entryDone && !exitDone;
         const entryHtml = item.entry
           ? `<span class="zone-card-time ${entryDone ? 'confirmed' : ''}">Entry: ${fmtDate(item.entry)}</span>`
           : (item.manualNeeded ? '<span class="zone-card-time manual-needed-text">Entry: manual needed</span>' : '');
@@ -748,12 +750,15 @@ function renderTable(list) {
         const etaDone = !!item.etaConfirmed;
         const etsDone = !!item.etsConfirmed;
         const isConf = (!!item.eta || !!item.ets) && (!item.eta || etaDone) && (!item.ets || etsDone);
+        const hasArrival = item.arrivalEnabled !== false;
+        const hasDeparture = item.departureEnabled !== false;
+        const inProgress = hasArrival && hasDeparture && etaDone && !etsDone;
         const etaClass = etaDone ? 'confirmed' : '';
         const etsClass = etsDone ? 'confirmed' : '';
         const etaText = etaDone ? 'ATA' : 'ETA';
         const etsText = etsDone ? 'ATD' : 'ETD';
         
-        let html = `<div class="port-card ${isConf ? 'confirmed-card' : ''}">
+        let html = `<div class="port-card ${isConf ? 'confirmed-card' : ''} ${inProgress ? 'in-zone-card' : ''}">
           <div class="port-card-title">${esc(item.port || '—')}</div>
           <div class="timeline-card-line">`;
           
@@ -1033,7 +1038,7 @@ function hasManualZoneEdit(which) {
 function applyCalculatedZoneValue(which, iso) {
   const input = zoneInput(which);
   const confirmed = document.getElementById('f-zone' + which + 'Confirmed')?.checked;
-  if (!input || confirmed || hasManualZoneEdit(which)) return;
+  if (!input || confirmed) return;
   input.value = isoToLocal(iso);
   input.dataset.autoValue = input.value;
   input.dataset.manualEdited = '0';
@@ -1457,6 +1462,15 @@ function onZoneManualEdit(which) {
 function onConfirmToggle(which) {
   const cb = document.getElementById(`f-zone${which}Confirmed`);
   toggleConfirmedStyle(which, cb.checked);
+  if (!cb.checked) {
+    const input = zoneInput(which);
+    if (input && input.dataset.calculatedValue) {
+      input.value = input.dataset.calculatedValue;
+      input.dataset.autoValue = input.value;
+      input.dataset.manualEdited = '0';
+      refreshDateTime24(input);
+    }
+  }
 }
 
 function toggleConfirmedStyle(which, confirmed) {

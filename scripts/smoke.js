@@ -126,8 +126,10 @@ async function main() {
 
     console.log(`Smoke OK: ${voyages.voyages.length} active voyages, ${config.riskZones.length} risk zones, ${audit.summary.totalWarnings} audit warnings.`);
   } finally {
-    child.kill();
-    await new Promise(resolve => child.once('exit', resolve));
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill();
+      await new Promise(resolve => child.once('exit', resolve));
+    }
   }
 
   if (output.includes('EADDRINUSE')) throw new Error(`Port ${PORT} is already in use.`);

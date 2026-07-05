@@ -2,9 +2,10 @@ node_modules/
 npm-debug.log*
 .DS_Store
 Thumbs.db
+
+# Local runtime backups created by server writes
+data/backups/
+
+# Optional local environment overrides
 .env
 .env.*
-data/
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal

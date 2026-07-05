@@ -180,6 +180,8 @@ window.TimelineEvents = (() => {
           ets: departureEnabled ? (port.ets || null) : null,
           etaConfirmed: arrivalEnabled && !!port.etaConfirmed,
           etsConfirmed: departureEnabled && !!port.etsConfirmed,
+          arrivalEnabled,
+          departureEnabled,
           omitted: !!port.omit
         };
       });

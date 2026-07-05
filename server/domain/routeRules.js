@@ -204,7 +204,7 @@ function calculateRouteSuggestions(voyage, config) {
 }
 
 function canApplySuggestion(target) {
-  return !target.confirmed && !target.manuallyEdited;
+  return !target.confirmed;
 }
 
 function isManualOverride(currentValue, previousCalculatedValue, nextCalculatedValue) {

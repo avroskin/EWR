@@ -192,7 +192,7 @@ const fixtures = [
     }
   },
   {
-    name: 'Manual unconfirmed zone time not overwritten by calculation',
+    name: 'Manual unconfirmed zone time overwritten by calculation',
     voyage: {
       zone: 'black_sea',
       portCalls: [
@@ -210,7 +210,7 @@ const fixtures = [
         { windowKey: 'main', status: 'ok', entry: '2026-11-05T00:00:00.000Z', exit: '2026-11-08T06:00:00.000Z' }
       ],
       applied: {
-        zoneEntry: '2026-11-04T10:00:00.000Z',
+        zoneEntry: '2026-11-05T00:00:00.000Z',
         zoneExit: '2026-11-08T06:00:00.000Z'
       }
     }

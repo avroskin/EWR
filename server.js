@@ -9,6 +9,7 @@ const ExcelJS = require('exceljs');
 const { buildInsuranceExportWorkbook } = require('./server/exportWorkbook');
 const { createDailyDataBackup } = require('./server/backupService');
 const { calculateRouteSuggestions, applyRouteSuggestions } = require('./server/domain/routeRules');
+const sqliteStore = require('./server/storage/sqliteStore');
 
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3002;
@@ -20,7 +21,6 @@ const SETTINGS_PASSWORD = process.env.EWR_SETTINGS_PASSWORD || '';
 const SETTINGS_PASSWORD_HASH = process.env.EWR_SETTINGS_PASSWORD_HASH || DEFAULT_SETTINGS_PASSWORD_HASH;
 const ADMIN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 const adminTokens = new Map();
-const adminIpSessions = new Map();
 let writeQueue = Promise.resolve();
 
 app.use(express.json());
@@ -75,21 +75,28 @@ function writeJSON(filePath, data) {
 }
 
 function readVoyages(year) {
-  const filePath = voyagesFile(year);
-  return readJSON(filePath, [], { strict: fs.existsSync(filePath) });
+  return sqliteStore.readVoyages(year);
 }
 
 function writeVoyages(year, voyages) {
-  writeJSON(voyagesFile(year), voyages);
+  sqliteStore.writeVoyages(year, voyages);
 }
 
 
+function readArchive(year) {
+  return sqliteStore.readArchive(year);
+}
+
+function writeArchive(year, voyages) {
+  sqliteStore.writeArchive(year, voyages);
+}
+
 function hasArchive(year) {
-  return fs.existsSync(archiveFile(year));
+  return sqliteStore.hasArchive(year);
 }
 
 function isArchived(year) {
-  return hasArchive(year) && !fs.existsSync(voyagesFile(year));
+  return sqliteStore.isArchived(year);
 }
 
 function archiveCutoffTime(year) {
@@ -135,11 +142,11 @@ function normalizeConfig(cfg) {
 }
 
 function readConfig() {
-  return normalizeConfig(readJSON(configFile(), { vessels: [], charterers: [], services: [], riskZones: defaultRiskZones() }));
+  return normalizeConfig(sqliteStore.readConfig({ vessels: [], charterers: [], services: [], riskZones: defaultRiskZones() }));
 }
 
 function writeConfig(cfg) {
-  writeJSON(configFile(), cfg);
+  sqliteStore.writeConfig(cfg);
 }
 
 function addToConfig(field, value) {
@@ -183,32 +190,9 @@ function passwordMatches(value) {
   return sameSecret(hashSecret(password), SETTINGS_PASSWORD_HASH);
 }
 
-function adminClientIp(req) {
-  const raw = String(req.socket?.remoteAddress || req.ip || '').trim();
-  return raw.replace(/^::ffff:/, '') || 'unknown';
-}
-
-function markAdminIp(req) {
-  const ip = adminClientIp(req);
-  adminIpSessions.set(ip, Date.now() + ADMIN_TOKEN_TTL_MS);
-  console.log(`[ADMIN] ${ip} unlocked edit privileges until ${new Date(adminIpSessions.get(ip)).toISOString()}`);
-}
-
-function hasAdminIp(req) {
-  const ip = adminClientIp(req);
-  const expiresAt = adminIpSessions.get(ip);
-  if (!expiresAt || expiresAt < Date.now()) {
-    if (expiresAt) adminIpSessions.delete(ip);
-    return false;
-  }
-  adminIpSessions.set(ip, Date.now() + ADMIN_TOKEN_TTL_MS);
-  return true;
-}
-
-function issueAdminToken(req) {
+function issueAdminToken() {
   const token = crypto.randomBytes(32).toString('hex');
   adminTokens.set(token, Date.now() + ADMIN_TOKEN_TTL_MS);
-  markAdminIp(req);
   return token;
 }
 
@@ -220,7 +204,7 @@ function hasAdminAccess(req) {
     return true;
   }
   if (token) adminTokens.delete(token);
-  return hasAdminIp(req);
+  return false;
 }
 
 function requireAdmin(req) {
@@ -663,7 +647,7 @@ app.use(mutationWriteLock);
 app.post('/api/admin/unlock', (req, res) => {
   try {
     if (!passwordMatches(req.body.password)) throw authError('Settings password is incorrect.');
-    res.json({ token: issueAdminToken(req), expiresInMs: ADMIN_TOKEN_TTL_MS });
+    res.json({ token: issueAdminToken(), expiresInMs: ADMIN_TOKEN_TTL_MS });
   } catch (err) {
     res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Settings unlock failed.' });
   }
@@ -682,9 +666,9 @@ app.get('/api/voyages', (req, res) => {
     const archiveOnly = req.query.archive === '1';
     let voyages;
     if (archiveOnly) {
-      voyages = readJSON(archiveFile(year), [], { strict: hasArchive(year) });
+      voyages = readArchive(year);
     } else if (isArchived(year)) {
-      voyages = readJSON(archiveFile(year), []);
+      voyages = readArchive(year);
     } else {
       voyages = readVoyages(year);
     }
@@ -705,7 +689,7 @@ app.get('/api/voyages/:id', (req, res) => {
     ensureDataDir();
     const year = parseYear(req.query.year) || currentYear();
     const archiveOnly = req.query.archive === '1';
-    const voyages = archiveOnly || isArchived(year) ? readJSON(archiveFile(year), []) : readVoyages(year);
+    const voyages = archiveOnly || isArchived(year) ? readArchive(year) : readVoyages(year);
     const voyage = voyages.find(v => v.id === req.params.id);
     if (!voyage) return res.status(404).json({ error: 'Record not found.' });
     res.json(voyage);
@@ -879,11 +863,7 @@ app.post('/api/services/close', async (req, res) => {
 app.get('/api/archives', (req, res) => {
   try {
     ensureDataDir();
-    const files = fs.readdirSync(DATA_DIR);
-    const years = files
-      .filter(f => /^archive_\d{4}\.json$/.test(f))
-      .map(f => parseInt(f.replace('archive_', '').replace('.json', '')))
-      .sort((a, b) => b - a);
+    const years = sqliteStore.listArchiveYears().map(item => item.year);
     const archivedYears = years.filter(y => isArchived(y));
     const partialArchivedYears = years.filter(y => !isArchived(y));
     res.json({ archivedYears, partialArchivedYears });
@@ -920,14 +900,14 @@ app.post('/api/archive/:year', async (req, res) => {
       }
     }
 
-    const existingArchive = readJSON(archiveFile(year), []);
+    const existingArchive = readArchive(year);
     const existingIds = new Set(existingArchive.map(v => v.id));
     const mergedArchive = [
       ...existingArchive,
       ...toArchive.filter(v => !existingIds.has(v.id))
     ];
 
-    writeJSON(archiveFile(year), mergedArchive);
+    writeArchive(year, mergedArchive);
     writeVoyages(year, remaining);
 
     res.json({
@@ -988,7 +968,7 @@ app.get('/api/audit', (req, res) => {
   try {
     ensureDataDir();
     const year = parseYear(req.query.year) || currentYear();
-    const voyages = isArchived(year) ? readJSON(archiveFile(year), []) : readVoyages(year);
+    const voyages = isArchived(year) ? readArchive(year) : readVoyages(year);
     res.json({ year, archived: isArchived(year), ...buildAuditReport(voyages) });
   } catch (err) {
     console.error(err);
@@ -1001,7 +981,7 @@ app.get('/api/audit/export', async (req, res) => {
   try {
     ensureDataDir();
     const year = parseYear(req.query.year) || currentYear();
-    const voyages = isArchived(year) ? readJSON(archiveFile(year), []) : readVoyages(year);
+    const voyages = isArchived(year) ? readArchive(year) : readVoyages(year);
     const audit = buildAuditReport(voyages);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Audit');
@@ -1040,7 +1020,7 @@ app.get('/api/export', async (req, res) => {
 
     let voyages;
     if (isArchived(year)) {
-      voyages = readJSON(archiveFile(year), []);
+      voyages = readArchive(year);
     } else {
       voyages = readVoyages(year);
     }

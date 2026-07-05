@@ -1,0 +1,29 @@
+{
+  "name": "ewr-zone-tracker",
+  "version": "1.0.0",
+  "description": "HRA / EWR / K&R voyage zone tracking tool for maritime insurance",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "smoke": "node scripts/smoke.js",
+    "check": "node --check server.js && node --check server/exportWorkbook.js && node --check server/backupEngine.js && node --check server/backupService.js && node --check server/storage/sqliteStore.js && node --check server/domain/routeRules.js && node --check server/domain/routeFixtures.js && node --check server/domain/timelineEvents.js && node --check server/domain/zoneWindows.js && node --check server/domain/routeDefaults.js && node --check server/domain/voyageValidation.js && node --check server/domain/voyagePayload.js && node --check server/domain/voyageDraft.js && node --check public/js/timelineEvents.js && node --check public/js/app.js && node --check update_config.js && node --check scripts/smoke.js && node --check scripts/backup-data.js && node --check scripts/test-route-rules.js && node --check scripts/test-timeline-events.js && node --check scripts/test-zone-windows.js && node --check scripts/test-route-defaults.js && node --check scripts/test-voyage-validation.js && node --check scripts/test-voyage-payload.js && node --check scripts/test-voyage-draft.js && node --check scripts/test-vessel-profiles.js",
+    "check:import": "node --check tools/import-legacy/import_excel2.js",
+    "import:legacy": "node tools/import-legacy/import_excel2.js",
+    "backup:data": "node scripts/backup-data.js",
+    "test:routes": "node scripts/test-route-rules.js",
+    "test:timeline": "node scripts/test-timeline-events.js",
+    "test:zone-windows": "node scripts/test-zone-windows.js",
+    "test:defaults": "node scripts/test-route-defaults.js",
+    "test:validation": "node scripts/test-voyage-validation.js",
+    "test:payload": "node scripts/test-voyage-payload.js",
+    "test:draft": "node scripts/test-voyage-draft.js",
+    "test:vessel-profiles": "node scripts/test-vessel-profiles.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "exceljs": "^4.3.0",
+    "uuid": "^9.0.0",
+    "archiver": "^5.3.2"
+  }
+}
+

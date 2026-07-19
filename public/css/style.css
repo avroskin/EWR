@@ -527,7 +527,7 @@ body.archive-mode .app-header {
 
 .voyages-table {
   width: 100%;
-  min-width: 1320px;
+  min-width: 1180px;
   table-layout: fixed;
   border-collapse: collapse;
   background: #fff;
@@ -536,8 +536,8 @@ body.archive-mode .app-header {
   box-shadow: var(--shadow);
 }
 
-.col-vessel { width: 220px; }
-.col-charterer { width: 170px; }
+.col-vessel { width: 150px; }
+.col-charterer { width: 118px; }
 .col-zone { width: 0; }
 .col-timeline { width: auto; }
 .col-notes { width: 150px; }
@@ -642,6 +642,14 @@ tr:hover > td { background-color: var(--blue-light); }
   padding: 10px 12px;
   font-size: 14px;
   vertical-align: middle;
+}
+
+.voyages-table th:nth-child(1),
+.voyages-table th:nth-child(2),
+.vessel-cell,
+.charterer-cell {
+  padding-left: 9px;
+  padding-right: 8px;
 }
 
 /* Compact row identity and actions */

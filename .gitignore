@@ -9,3 +9,8 @@ data/backups/
 # Optional local environment overrides
 .env
 .env.*
+
+# Local runtime data and backups
+data/
+*.zip
+node_modules/

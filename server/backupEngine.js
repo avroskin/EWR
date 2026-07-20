@@ -21,6 +21,13 @@ function formatLocalDate(date = new Date()) {
   return year + '-' + month + '-' + day;
 }
 
+function formatLocalTimestamp(date = new Date()) {
+  const time = [date.getHours(), date.getMinutes(), date.getSeconds()]
+    .map(value => String(value).padStart(2, '0'))
+    .join('-');
+  return formatLocalDate(date) + '_' + time + '-' + String(date.getMilliseconds()).padStart(3, '0');
+}
+
 function hashFile(filePath) {
   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
 }
@@ -33,8 +40,9 @@ function createBackupService(config) {
   const networkBackupDir = config.networkBackupDir || '';
   const keepDays = Number.isFinite(config.keepDays) ? config.keepDays : 30;
   const allowedDataFileRe = config.allowedDataFileRe;
+  const prepareBackupFiles = config.prepareBackupFiles || null;
   const backupFilePrefix = config.backupFilePrefix || (appName.toLowerCase() + '-data-backup');
-  const backupFileRe = config.backupFileRe || new RegExp('^' + escapeRegExp(backupFilePrefix) + '_\\d{4}-\\d{2}-\\d{2}\\.zip$', 'i');
+  const backupFileRe = config.backupFileRe || new RegExp('^' + escapeRegExp(backupFilePrefix) + '_\\d{4}-\\d{2}-\\d{2}(?:_\\d{2}-\\d{2}-\\d{2}(?:-\\d{3})?)?\\.zip$', 'i');
   const logFile = config.logFile || path.join(localBackupDir, config.logFileName || 'backup-log.jsonl');
 
   if (!dataDir) throw new Error('Backup dataDir is required.');
@@ -153,40 +161,32 @@ function createBackupService(config) {
 
   async function createBackup(options = {}) {
     const backupDate = options.backupDate || formatLocalDate();
-    const fileName = backupFilePrefix + '_' + backupDate + '.zip';
+    const backupTimestamp = options.backupTimestamp || formatLocalTimestamp();
+    const fileName = backupFilePrefix + '_' + backupTimestamp + '.zip';
     const localZipPath = path.join(localBackupDir, fileName);
-    const files = collectAllowedDataFiles();
+    const prepared = prepareBackupFiles ? await prepareBackupFiles() : null;
+    const files = prepared ? prepared.files : collectAllowedDataFiles();
 
-    if (!files.length) throw new Error('No data files found to back up.');
+    try {
+      if (!files.length) throw new Error('No data files found to back up.');
 
-    if (fs.existsSync(localZipPath) && !options.force) {
+      const manifest = buildManifest(files, { backupDate, reason: options.reason || 'manual' });
+      await writeZip(localZipPath, files, manifest);
       const network = await copyBackupToNetworkShare(localZipPath, fileName);
-      appendLog({ status: 'skipped-existing', fileName, localZipPath, network });
-      return { created: false, fileName, localZipPath, files: files.map(file => file.archivePath), network };
+      const pruned = await pruneOldLocalBackups();
+
+      appendLog({
+        status: 'created', fileName, localZipPath, network, pruned,
+        includedFiles: manifest.includedFiles
+      });
+
+      return {
+        created: true, fileName, localZipPath,
+        files: files.map(file => file.archivePath), network, pruned
+      };
+    } finally {
+      if (prepared && prepared.cleanup) await prepared.cleanup();
     }
-
-    const manifest = buildManifest(files, { backupDate, reason: options.reason || 'manual' });
-    await writeZip(localZipPath, files, manifest);
-    const network = await copyBackupToNetworkShare(localZipPath, fileName);
-    const pruned = await pruneOldLocalBackups();
-
-    appendLog({
-      status: 'created',
-      fileName,
-      localZipPath,
-      network,
-      pruned,
-      includedFiles: manifest.includedFiles
-    });
-
-    return {
-      created: true,
-      fileName,
-      localZipPath,
-      files: files.map(file => file.archivePath),
-      network,
-      pruned
-    };
   }
 
   async function createDailyBackup() {
@@ -205,12 +205,14 @@ function createBackupService(config) {
     collectAllowedDataFiles,
     createBackup,
     createDailyBackup,
-    formatLocalDate
+    formatLocalDate,
+    formatLocalTimestamp
   };
 }
 
 module.exports = {
   createBackupService,
   formatLocalDate,
+  formatLocalTimestamp,
   hashFile
 };

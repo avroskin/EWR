@@ -1,25 +1,12 @@
 'use strict';
 
-const fs = require('fs');
-const path = require('path');
+const sqliteStore = require('./server/storage/sqliteStore');
 
-const dataDir = path.join(__dirname, 'data');
-const jsonPath = path.join(dataDir, 'voyages_2026.json');
-const configPath = path.join(dataDir, 'config.json');
-
-function readJSON(filePath, fallback) {
-  if (!fs.existsSync(filePath)) return fallback;
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function writeJSON(filePath, data) {
-  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmpPath, filePath);
-}
-
-const voyages = readJSON(jsonPath, []);
-const existingConfig = readJSON(configPath, {});
+const years = sqliteStore.getDatabase().prepare(`
+  SELECT year FROM voyages UNION SELECT year FROM archives ORDER BY year
+`).all().map(row => row.year);
+const voyages = years.flatMap(year => sqliteStore.readYearRecords(year));
+const existingConfig = sqliteStore.readConfig({});
 
 const vessels = new Set(existingConfig.vessels || []);
 const charterers = new Set(existingConfig.charterers || []);
@@ -38,5 +25,6 @@ const config = {
   services: Array.from(services).sort((a, b) => a.localeCompare(b))
 };
 
-writeJSON(configPath, config);
-console.log('Config names updated; risk zone rules preserved.');
+sqliteStore.writeConfig(config);
+sqliteStore.closeDatabase();
+console.log(`Config names updated from ${voyages.length} SQLite voyage records; risk zone rules preserved.`);

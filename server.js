@@ -4,7 +4,6 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { v4: uuidv4 } = require('uuid');
 const ExcelJS = require('exceljs');
 const { buildInsuranceExportWorkbook } = require('./server/exportWorkbook');
 const { createDailyDataBackup } = require('./server/backupService');
@@ -16,9 +15,8 @@ const PORT = parseInt(process.env.PORT, 10) || 3002;
 const HOST = process.env.HOST || '0.0.0.0';
 const DATA_DIR = path.join(__dirname, 'data');
 const BACKUP_DIR = path.join(DATA_DIR, 'backups');
-const DEFAULT_SETTINGS_PASSWORD_HASH = ['74ed65a2d22a92c3', 'b4e013c15ff04d05', 'f4954cd792d9cf56', 'e9a0edad5f914ed1'].join('');
 const SETTINGS_PASSWORD = process.env.EWR_SETTINGS_PASSWORD || '';
-const SETTINGS_PASSWORD_HASH = process.env.EWR_SETTINGS_PASSWORD_HASH || DEFAULT_SETTINGS_PASSWORD_HASH;
+const SETTINGS_PASSWORD_HASH = process.env.EWR_SETTINGS_PASSWORD_HASH || '';
 const ADMIN_TOKEN_TTL_MS = 8 * 60 * 60 * 1000;
 const adminTokens = new Map();
 let writeQueue = Promise.resolve();
@@ -37,43 +35,6 @@ function currentYear() {
   return new Date().getFullYear();
 }
 
-function voyagesFile(year) {
-  return path.join(DATA_DIR, `voyages_${year}.json`);
-}
-
-function archiveFile(year) {
-  return path.join(DATA_DIR, `archive_${year}.json`);
-}
-
-function configFile() {
-  return path.join(DATA_DIR, 'config.json');
-}
-
-function readJSON(filePath, fallback = [], options = {}) {
-  try {
-    if (!fs.existsSync(filePath)) return fallback;
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (err) {
-    console.error(`Could not read JSON file ${filePath}:`, err.message);
-    if (options.strict) throw err;
-    return fallback;
-  }
-}
-
-function writeJSON(filePath, data) {
-  ensureDataDir();
-  if (fs.existsSync(filePath)) {
-    const parsed = path.parse(filePath);
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const backup = path.join(BACKUP_DIR, `${parsed.name}.${stamp}.json`);
-    fs.copyFileSync(filePath, backup);
-  }
-
-  const tmpPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
-  fs.writeFileSync(tmpPath, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmpPath, filePath);
-}
-
 function readVoyages(year) {
   return sqliteStore.readVoyages(year);
 }
@@ -85,6 +46,10 @@ function writeVoyages(year, voyages) {
 
 function readArchive(year) {
   return sqliteStore.readArchive(year);
+}
+
+function readYearRecords(year) {
+  return sqliteStore.readYearRecords(year);
 }
 
 function writeArchive(year, voyages) {
@@ -188,6 +153,10 @@ function passwordMatches(value) {
   if (!password) return false;
   if (SETTINGS_PASSWORD && sameSecret(password, SETTINGS_PASSWORD)) return true;
   return sameSecret(hashSecret(password), SETTINGS_PASSWORD_HASH);
+}
+
+function settingsPasswordConfigured() {
+  return !!(SETTINGS_PASSWORD || SETTINGS_PASSWORD_HASH);
 }
 
 function issueAdminToken() {
@@ -646,6 +615,9 @@ app.use(mutationWriteLock);
 // POST /api/admin/unlock
 app.post('/api/admin/unlock', (req, res) => {
   try {
+    if (!settingsPasswordConfigured()) {
+      return res.status(503).json({ error: 'Settings password is not configured. Set EWR_SETTINGS_PASSWORD.' });
+    }
     if (!passwordMatches(req.body.password)) throw authError('Settings password is incorrect.');
     res.json({ token: issueAdminToken(), expiresInMs: ADMIN_TOKEN_TTL_MS });
   } catch (err) {
@@ -670,7 +642,7 @@ app.get('/api/voyages', (req, res) => {
     } else if (isArchived(year)) {
       voyages = readArchive(year);
     } else {
-      voyages = readVoyages(year);
+      voyages = readYearRecords(year);
     }
 
     sortVoyagesByTimeline(voyages);
@@ -689,7 +661,7 @@ app.get('/api/voyages/:id', (req, res) => {
     ensureDataDir();
     const year = parseYear(req.query.year) || currentYear();
     const archiveOnly = req.query.archive === '1';
-    const voyages = archiveOnly || isArchived(year) ? readArchive(year) : readVoyages(year);
+    const voyages = archiveOnly ? readArchive(year) : readYearRecords(year);
     const voyage = voyages.find(v => v.id === req.params.id);
     if (!voyage) return res.status(404).json({ error: 'Record not found.' });
     res.json(voyage);
@@ -710,7 +682,7 @@ app.post('/api/voyages', async (req, res) => {
 
     const normalized = validateVoyagePayload(req.body);
     const voyage = {
-      id: uuidv4(),
+      id: crypto.randomUUID(),
       year,
       ...normalized,
       zoneEntryCalculated: null,
@@ -878,7 +850,7 @@ app.post('/api/archive/:year', async (req, res) => {
   try {
     requireAdmin(req);
     ensureDataDir();
-    const year = parseInt(req.params.year);
+    const year = parseYear(req.params.year);
     if (!year) return res.status(400).json({ error: 'Invalid year.' });
     if (isArchived(year)) return res.status(400).json({ error: 'This year is already fully archived.' });
 
@@ -907,8 +879,7 @@ app.post('/api/archive/:year', async (req, res) => {
       ...toArchive.filter(v => !existingIds.has(v.id))
     ];
 
-    writeArchive(year, mergedArchive);
-    writeVoyages(year, remaining);
+    sqliteStore.replaceYearAndArchive(year, remaining, mergedArchive);
 
     res.json({
       success: true,
@@ -968,7 +939,7 @@ app.get('/api/audit', (req, res) => {
   try {
     ensureDataDir();
     const year = parseYear(req.query.year) || currentYear();
-    const voyages = isArchived(year) ? readArchive(year) : readVoyages(year);
+    const voyages = readYearRecords(year);
     res.json({ year, archived: isArchived(year), ...buildAuditReport(voyages) });
   } catch (err) {
     console.error(err);
@@ -981,7 +952,7 @@ app.get('/api/audit/export', async (req, res) => {
   try {
     ensureDataDir();
     const year = parseYear(req.query.year) || currentYear();
-    const voyages = isArchived(year) ? readArchive(year) : readVoyages(year);
+    const voyages = readYearRecords(year);
     const audit = buildAuditReport(voyages);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Audit');
@@ -1018,12 +989,7 @@ app.get('/api/export', async (req, res) => {
     ensureDataDir();
     const year = parseYear(req.query.year) || currentYear();
 
-    let voyages;
-    if (isArchived(year)) {
-      voyages = readArchive(year);
-    } else {
-      voyages = readVoyages(year);
-    }
+    const voyages = readYearRecords(year);
 
     sortVoyagesByTimeline(voyages);
     const filtered = applyFilters(voyages, req.query);

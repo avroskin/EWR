@@ -2,7 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const { DatabaseSync } = require('node:sqlite');
+const { DatabaseSync, backup } = require('node:sqlite');
 
 const DEFAULT_DB_NAME = 'ewr.sqlite';
 
@@ -168,6 +168,13 @@ function readArchive(year) {
     .map(row => JSON.parse(row.payload_json));
 }
 
+function readYearRecords(year) {
+  const archived = readArchive(year);
+  const active = readVoyages(year);
+  const activeIds = new Set(active.map(voyage => voyage.id));
+  return [...archived.filter(voyage => !activeIds.has(voyage.id)), ...active];
+}
+
 function writeArchive(year, voyages) {
   const database = getDatabase();
   const items = voyages || [];
@@ -203,6 +210,46 @@ function hasArchive(year) {
   return Number(row.count) > 0;
 }
 
+function replaceYearAndArchive(year, activeVoyages, archivedVoyages) {
+  const database = getDatabase();
+  const numericYear = Number(year);
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    database.prepare('DELETE FROM voyages WHERE year = ?').run(numericYear);
+    database.prepare('DELETE FROM archives WHERE year = ?').run(numericYear);
+    const activeInsert = database.prepare(`
+      INSERT INTO voyages (id, year, vessel_name, charterer, service, zone, status, updated_at, payload_json)
+      VALUES (@id, @year, @vessel_name, @charterer, @service, @zone, @status, @updated_at, @payload_json)
+    `);
+    const archiveInsert = database.prepare(`
+      INSERT INTO archives (id, year, vessel_name, charterer, service, zone, status, archived_at, updated_at, payload_json)
+      VALUES (@id, @year, @vessel_name, @charterer, @service, @zone, @status, @archived_at, @updated_at, @payload_json)
+    `);
+
+    for (const voyage of activeVoyages || []) {
+      const params = voyageParams(voyage, numericYear);
+      activeInsert.run({
+        id: params.id, year: params.year, vessel_name: params.vessel_name,
+        charterer: params.charterer, service: params.service, zone: params.zone,
+        status: params.status, updated_at: params.updated_at, payload_json: params.payload_json
+      });
+    }
+    for (const voyage of archivedVoyages || []) {
+      const params = voyageParams(voyage, numericYear);
+      archiveInsert.run({
+        id: params.id, year: params.year, vessel_name: params.vessel_name,
+        charterer: params.charterer, service: params.service, zone: params.zone,
+        status: params.status, archived_at: params.archived_at,
+        updated_at: params.updated_at, payload_json: params.payload_json
+      });
+    }
+    database.exec('COMMIT');
+  } catch (err) {
+    database.exec('ROLLBACK');
+    throw err;
+  }
+}
+
 function isArchived(year) {
   return hasArchive(year) && !hasVoyages(year);
 }
@@ -232,10 +279,24 @@ function getDbPath() {
   return dbPath;
 }
 
+async function createSnapshot(destinationPath) {
+  const source = getDatabase();
+  await backup(source, destinationPath);
+  const snapshot = new DatabaseSync(destinationPath, { readOnly: true });
+  try {
+    const result = snapshot.prepare('PRAGMA integrity_check').get().integrity_check;
+    if (result !== 'ok') throw new Error(`SQLite snapshot integrity check failed: ${result}`);
+  } finally {
+    snapshot.close();
+  }
+  return destinationPath;
+}
+
 module.exports = {
   DEFAULT_DB_NAME,
   openDatabase,
   closeDatabase,
+  getDatabase,
   getDbPath,
   readConfig,
   writeConfig,
@@ -243,11 +304,14 @@ module.exports = {
   writeVoyages,
   hasVoyages,
   readArchive,
+  readYearRecords,
   writeArchive,
+  replaceYearAndArchive,
   hasArchive,
   isArchived,
   listArchiveYears,
   writeMeta,
   readMeta,
-  integrityCheck
+  integrityCheck,
+  createSnapshot
 };

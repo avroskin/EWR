@@ -60,7 +60,7 @@ async function waitForServer() {
 async function main() {
   const child = spawn(process.execPath, ['server.js'], {
     cwd: process.cwd(),
-    env: { ...process.env, PORT, HOST: '127.0.0.1' },
+    env: { ...process.env, PORT, HOST: '127.0.0.1', EWR_SETTINGS_PASSWORD: SMOKE_ADMIN_PASSWORD },
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -69,7 +69,11 @@ async function main() {
   child.stderr.on('data', chunk => { output += chunk.toString(); });
 
   try {
-    await waitForServer();
+    try {
+      await waitForServer();
+    } catch (err) {
+      throw new Error([err.message, output.trim()].filter(Boolean).join('\n'));
+    }
     const config = await fetchJSON('/api/config');
     const voyages = await fetchJSON('/api/voyages?year=2026&status=active');
     const audit = await fetchJSON('/api/audit?year=2026');

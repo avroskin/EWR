@@ -1,7 +1,7 @@
 'use strict';
 
 const assert = require('assert/strict');
-const config = require('../data/config.json');
+const config = require('../server/storage/sqliteStore').readConfig({});
 const fixtures = require('../server/domain/routeFixtures');
 const { calculateRouteSuggestions } = require('../server/domain/routeRules');
 const { buildTimelineEvents, buildExportRows } = require('../server/domain/timelineEvents');

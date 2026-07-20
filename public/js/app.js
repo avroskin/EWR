@@ -782,7 +782,7 @@ function renderTable(list) {
       : '<td class="notes-cell notes-empty">—</td>'; 
 
     const rowWarningClass = issueCount ? ' warning-row' : '';
-    const readOnlyRow = isArchivedYear || v.status === 'legacy';
+    const readOnlyRow = isArchivedYear || !!v.archivedAt || v.status === 'legacy';
     return `<tr class="row-zone-${cssSafeToken(zoneKey)}${rowWarningClass}${readOnlyRow ? ' archived-row' : ''}"${readOnlyRow ? '' : ` onclick="openEditForm('${v.id}')"`}> 
       <td class="vessel-cell"><div class="name-cell-wrap">${nameFitHtml(v.vesselName || '—', 'vessel-name-fit')}${issuePill}</div></td>
       <td class="charterer-cell">${nameFitHtml(normalizeChartererName(v.charterer) || '—', 'charterer-name-fit')}</td>
@@ -790,8 +790,8 @@ function renderTable(list) {
       ${notesCell}
       <td class="row-actions-cell" onclick="event.stopPropagation()">
         <div class="action-btns">
-          ${!(isArchivedYear || v.status === 'legacy') ? `<button class="btn-icon del" onclick="deleteVoyage('${v.id}')" title="Delete">🗑</button>` : ''}
-          ${(isArchivedYear || v.status === 'legacy') ? '<span class="readonly-pill">Read only</span>' : ''}
+          ${!readOnlyRow ? `<button class="btn-icon del" onclick="deleteVoyage('${v.id}')" title="Delete">🗑</button>` : ''}
+          ${readOnlyRow ? '<span class="readonly-pill">Read only</span>' : ''}
         </div>
       </td>
     </tr>`;

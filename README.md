@@ -20,6 +20,14 @@ The server can be started on another port when it is launched from the Portal pr
 PORT=3002 HOST=127.0.0.1 npm start
 ```
 
+You can also keep local settings in an untracked `.env` file:
+
+```text
+PORT=3002
+HOST=127.0.0.1
+EWR_SETTINGS_PASSWORD=choose-a-strong-password
+```
+
 On Windows PowerShell:
 
 ```powershell

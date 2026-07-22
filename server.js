@@ -10,6 +10,24 @@ const { createDailyDataBackup } = require('./server/backupService');
 const { calculateRouteSuggestions, applyRouteSuggestions } = require('./server/domain/routeRules');
 const sqliteStore = require('./server/storage/sqliteStore');
 
+function loadLocalEnv(filePath = path.join(__dirname, '.env')) {
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = value;
+  }
+}
+
+loadLocalEnv();
 const app = express();
 const PORT = parseInt(process.env.PORT, 10) || 3002;
 const HOST = process.env.HOST || '0.0.0.0';
